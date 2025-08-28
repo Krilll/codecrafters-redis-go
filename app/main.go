@@ -20,6 +20,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	for {
+		go listen(listener)
+	}
+}
+
+func listen(listener net.Listener) {
 	conn, err := listener.Accept()
 	if err != nil {
 		fmt.Println("Error accepting connection: ", err.Error())
@@ -37,4 +43,5 @@ func main() {
 
 		conn.Write([]byte("+PONG\r\n"))
 	}
+	// conn.Close()
 }
