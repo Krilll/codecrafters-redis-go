@@ -20,12 +20,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	conn, err := listener.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
-	}
 	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+
 		conn.Write([]byte("+PONG\r\n"))
 	}
 }
