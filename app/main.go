@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 )
@@ -31,17 +32,21 @@ func listen(listener net.Listener) {
 		fmt.Println("Error accepting connection: ", err.Error())
 		os.Exit(1)
 	}
+	defer conn.Close()
 
 	buf := make([]byte, 1024)
 	for {
 		_, err := conn.Read(buf)
 
 		if err != nil {
+			if err == io.EOF {
+				fmt.Println("Client close connection")
+				break
+			}
 			fmt.Println("Error listener: ", err.Error())
 			os.Exit(1)
 		}
 
 		conn.Write([]byte("+PONG\r\n"))
 	}
-	// conn.Close()
 }
