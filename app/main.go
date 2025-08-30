@@ -46,15 +46,13 @@ func main() {
 				err = parseContent(conn)
 				if err != nil {
 					conn.Write([]byte(err.Error()))
-					if err == io.EOF {
-						// os.Exit(1)
-					}
+					// if err == io.EOF {
+					// 	// os.Exit(1)
+					// }
 				}
 			}
 		}(conn)
 	}
-
-	// time.Sleep(60 * time.Second)
 }
 
 func readLine(reader *bufio.Reader) (string, error) {
@@ -122,15 +120,7 @@ func parseContent(conn net.Conn) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(len(text))
-		// fmt.Println(string(text))
-		// if len(words) < 3 {
-		// 	// нечего выводить
-		// 	return fmt.Errorf("need words")
-		// }
-		// message := "$2hhhhhh"
 		message := "$" + strconv.Itoa(len(text)) + "\r\n" + string(text) + "\r\n"
-		// conn.Write([]byte(message))
 		conn.Write([]byte(message))
 	default:
 		conn.Write([]byte("unknown command"))
