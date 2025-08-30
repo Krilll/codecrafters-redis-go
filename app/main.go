@@ -25,7 +25,7 @@ func main() {
 	defer listener.Close()
 
 	// Ограничиваем количество одновременных соединений
-	listenerCounter := make(chan struct{}, 1000)
+	listenerCounter := make(chan struct{}, 100)
 
 	for {
 		conn, err := listener.Accept()
