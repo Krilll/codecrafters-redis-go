@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -44,7 +43,7 @@ func main() {
 			}()
 
 			for {
-				err = reader(conn)
+				err = parseContent(conn)
 				if err != nil {
 					fmt.Println(err)
 					if err == io.EOF {
@@ -56,7 +55,25 @@ func main() {
 	}
 }
 
-func reader(conn net.Conn) error {
+func getUserArray(content []byte) []string {
+	words := []string{}
+	current := ""
+	for i := 0; i < len(content); i++ {
+		if content[i] == '\r' {
+			i += 3
+			words = append(words, current)
+			current = ""
+		} else {
+			current += string(content[i])
+		}
+	}
+	if current != "" {
+		words = append(words, current)
+	}
+	return words
+}
+
+func parseContent(conn net.Conn) error {
 	reader := bufio.NewReader(conn)
 
 	// определяем тип
@@ -67,108 +84,55 @@ func reader(conn net.Conn) error {
 		}
 		return err
 	}
-
 	if firstByte != '*' {
 		// это не массив
 		return fmt.Errorf("waiting array")
 	}
 
-	// получаем кол-во элементов
-	countString, err := reader.ReadString('\n')
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		if err == io.EOF {
+			return io.EOF
+		}
+		return err
+	}
+	// fmt.Println(content)
+	// conn.Write(content)
+
+	words := getUserArray(content)
+	if len(words) < 2 {
+		// не та длина
+		return fmt.Errorf("wrong length")
+	}
+
+	getLen, err := strconv.Atoi(words[0])
 	if err != nil {
 		return err
 	}
-
-	countString = strings.TrimSuffix(countString, "\r\n")
-
-	count, err := strconv.Atoi(countString)
-	if err != nil {
-		return err
-	}
-	conn.Write([]byte(countString))
-
-	// all := []byte{}
-	count++
-	for i := range count {
-		_ = i
-		firstByte, err := reader.ReadByte()
-		if err != nil {
-			return err
+	if getLen != (len(words) - 1) {
+		fmt.Println(getLen)
+		fmt.Println(len(words))
+		for q, a := range words {
+			fmt.Println(q, a)
 		}
-
-		if firstByte == '$' {
-			// пришла команда или ее аргумент
-
-			word, err := reader.ReadString('\n')
-			if err != nil {
-				return err
-			}
-
-			word = strings.TrimSuffix(word, "\r\n")
-			conn.Write([]byte(word))
-
-			cc, err := strconv.Atoi(word)
-			if err != nil {
-				return err
-			}
-
-			strBytes := make([]byte, cc)
-			_, err = io.ReadFull(reader, strBytes)
-			if err != nil {
-				return err
-			}
-
-			conn.Write(strBytes)
-
-		}
-		// all = append(all, firstByte)
-		conn.Write([]byte("Step "))
-
+		// неправильное кол-во элементов
+		return fmt.Errorf("incorrect number of elements")
 	}
-	// conn.Write(all)
-	// bufParts := bytes.Split(buf[:], []byte("\r\n"))
 
-	// if len(bufParts) < 3 {
-	// 	conn.Write([]byte("Waiting for command\r\n"))
-	// 	break
-	// }
-
-	// command := string(bufParts[0][:])
-	// switch command {
-	// case "PING":
-	// 	conn.Write([]byte("+PONG\r\n"))
-	// case "ECHO":
-	// 	// msg, err := bufParts[1]
-	// 	// if err != nil {
-	// 	conn.Write([]byte("Waiting for text\r\n"))
-	// 	// } else {
-	// 	// 	conn.Write(msg)
-	// 	// }
-	// default:
-	// 	conn.Write([]byte(command))
-	// }
-
-	// switch {
-	// case len(parts) == 0:
-	// 	conn.Write([]byte("Waiting for command\r\n"))
-	// case
-	// }
-	// strBuf := string(buf[:])
-
-	// conn.Write([]byte(strBuf))
-
-	// // fmt.Println("Client buf", buf)
-
-	// if err != nil {
-	// 	if err == io.EOF {
-	// 		fmt.Println("Client close connection")
-	// 		break
-	// 	}
-	// 	fmt.Println("Error listener: ", err.Error())
-	// 	os.Exit(1)
-	// }
-
-	// conn.Write([]byte("+PONG\r\n"))
+	switch words[1] {
+	case "PING":
+		conn.Write([]byte("+PONG\r\n"))
+	case "ECHO":
+		if len(words) < 3 {
+			// нечего выводить
+			return fmt.Errorf("need words")
+		}
+		// fmt.Println(len(words))
+		// fmt.Println(words[2])
+		message := "$" + strconv.Itoa(len(words[2])) + "\r\n" + words[2] + "\r\n"
+		conn.Write([]byte(message))
+	default:
+		conn.Write([]byte("unknown command"))
+	}
 	return nil
-
 }
