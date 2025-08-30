@@ -25,7 +25,7 @@ func main() {
 	defer listener.Close()
 
 	// Ограничиваем количество одновременных соединений
-	listenerCounter := make(chan struct{}, 100)
+	listenerCounter := make(chan struct{}, 1000)
 
 	for {
 		conn, err := listener.Accept()
@@ -45,42 +45,38 @@ func main() {
 			for {
 				err = parseContent(conn)
 				if err != nil {
-					fmt.Println(err)
+					conn.Write([]byte(err.Error()))
 					if err == io.EOF {
-						os.Exit(1)
+						// os.Exit(1)
 					}
 				}
 			}
 		}(conn)
 	}
+
+	// time.Sleep(60 * time.Second)
 }
 
-func getUserArray(content []byte) []string {
-	words := []string{}
-	current := ""
-	for i := 0; i < len(content); i++ {
-		if content[i] == '\r' {
-			i += 3
-			words = append(words, current)
-			current = ""
-		} else {
-			current += string(content[i])
-		}
+func readLine(reader *bufio.Reader) (string, error) {
+	content, isPrefix, err := reader.ReadLine()
+	if err != nil {
+		return "", err
 	}
-	if current != "" {
-		words = append(words, current)
+	if isPrefix {
+		// прочитана не вся строка
+		return "", fmt.Errorf("wrong string format")
 	}
-	return words
+
+	return string(content), nil
 }
 
 func parseContent(conn net.Conn) error {
 	reader := bufio.NewReader(conn)
 
-	// определяем тип
 	firstByte, err := reader.ReadByte()
 	if err != nil {
 		if err == io.EOF {
-			return io.EOF
+			return err
 		}
 		return err
 	}
@@ -89,47 +85,52 @@ func parseContent(conn net.Conn) error {
 		return fmt.Errorf("waiting array")
 	}
 
-	content, err := io.ReadAll(reader)
+	// проверяем длину переданную
+	count, err := readLine(reader)
 	if err != nil {
-		if err == io.EOF {
-			return io.EOF
-		}
 		return err
 	}
-	// fmt.Println(content)
-	// conn.Write(content)
-
-	words := getUserArray(content)
-	if len(words) < 2 {
+	countInt, err := strconv.Atoi(count)
+	if err != nil {
+		return err
+	}
+	if countInt < 1 {
 		// не та длина
 		return fmt.Errorf("wrong length")
 	}
 
-	getLen, err := strconv.Atoi(words[0])
+	// пропускаем строку
+	_, err = readLine(reader)
 	if err != nil {
 		return err
 	}
-	if getLen != (len(words) - 1) {
-		fmt.Println(getLen)
-		fmt.Println(len(words))
-		for q, a := range words {
-			fmt.Println(q, a)
-		}
-		// неправильное кол-во элементов
-		return fmt.Errorf("incorrect number of elements")
-	}
 
-	switch words[1] {
+	command, err := readLine(reader)
+	if err != nil {
+		return err
+	}
+	stringCommand := string(command)
+	switch stringCommand {
 	case "PING":
 		conn.Write([]byte("+PONG\r\n"))
 	case "ECHO":
-		if len(words) < 3 {
-			// нечего выводить
-			return fmt.Errorf("need words")
+		_, err = readLine(reader)
+		if err != nil {
+			return err
 		}
-		// fmt.Println(len(words))
-		// fmt.Println(words[2])
-		message := "$" + strconv.Itoa(len(words[2])) + "\r\n" + words[2] + "\r\n"
+		text, err := readLine(reader)
+		if err != nil {
+			return err
+		}
+		fmt.Println(len(text))
+		// fmt.Println(string(text))
+		// if len(words) < 3 {
+		// 	// нечего выводить
+		// 	return fmt.Errorf("need words")
+		// }
+		// message := "$2hhhhhh"
+		message := "$" + strconv.Itoa(len(text)) + "\r\n" + string(text) + "\r\n"
+		// conn.Write([]byte(message))
 		conn.Write([]byte(message))
 	default:
 		conn.Write([]byte("unknown command"))
