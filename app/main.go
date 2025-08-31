@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -25,7 +26,7 @@ func main() {
 	defer listener.Close()
 
 	// Ограничиваем количество одновременных соединений
-	listenerCounter := make(chan struct{}, 100)
+	listenerCounter := make(chan struct{}, 2)
 
 	for {
 		conn, err := listener.Accept()
@@ -37,22 +38,37 @@ func main() {
 		listenerCounter <- struct{}{}
 
 		go func(conn net.Conn) {
+			keysMap := make(map[string]string)
+			mtx := &sync.RWMutex{}
+
 			defer conn.Close()
 			defer func() {
 				<-listenerCounter
 			}()
 
 			for {
-				err = parseContent(conn)
+				err = parseContent(conn, keysMap, mtx)
 				if err != nil {
-					conn.Write([]byte(err.Error()))
-					// if err == io.EOF {
-					// 	// os.Exit(1)
-					// }
+					if err != io.EOF {
+						conn.Write([]byte(err.Error()))
+					}
+					break
 				}
 			}
 		}(conn)
 	}
+}
+
+func readLines(reader *bufio.Reader) (string, error) {
+	content, err := readLine(reader)
+	if err != nil {
+		return "", err
+	}
+	_, err = readLine(reader)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
 func readLine(reader *bufio.Reader) (string, error) {
@@ -68,7 +84,7 @@ func readLine(reader *bufio.Reader) (string, error) {
 	return string(content), nil
 }
 
-func parseContent(conn net.Conn) error {
+func parseContent(conn net.Conn, keysMap map[string]string, mtx *sync.RWMutex) error {
 	reader := bufio.NewReader(conn)
 
 	firstByte, err := reader.ReadByte()
@@ -84,7 +100,7 @@ func parseContent(conn net.Conn) error {
 	}
 
 	// проверяем длину переданную
-	count, err := readLine(reader)
+	count, err := readLines(reader)
 	if err != nil {
 		return err
 	}
@@ -97,13 +113,12 @@ func parseContent(conn net.Conn) error {
 		return fmt.Errorf("wrong length")
 	}
 
-	// пропускаем строку
-	_, err = readLine(reader)
-	if err != nil {
-		return err
+	var command string
+	if countInt == 1 {
+		command, err = readLine(reader)
+	} else {
+		command, err = readLines(reader)
 	}
-
-	command, err := readLine(reader)
 	if err != nil {
 		return err
 	}
@@ -112,15 +127,58 @@ func parseContent(conn net.Conn) error {
 	case "PING":
 		conn.Write([]byte("+PONG\r\n"))
 	case "ECHO":
-		_, err = readLine(reader)
-		if err != nil {
-			return err
+		if countInt != 2 {
+			// не та длина
+			return fmt.Errorf("wrong length")
 		}
 		text, err := readLine(reader)
 		if err != nil {
 			return err
 		}
 		message := "$" + strconv.Itoa(len(text)) + "\r\n" + string(text) + "\r\n"
+		conn.Write([]byte(message))
+	case "SET":
+		if countInt != 3 {
+			// не та длина
+			return fmt.Errorf("wrong length")
+		}
+		key, err := readLines(reader)
+		if err != nil {
+			return err
+		}
+		value, err := readLine(reader)
+		if err != nil {
+			return err
+		}
+
+		mtx.Lock()
+		keysMap[key] = value
+		mtx.Unlock()
+
+		conn.Write([]byte("+OK\r\n"))
+	case "GET":
+		if countInt != 2 {
+			// не та длина
+			return fmt.Errorf("wrong length")
+		}
+		key, err := readLine(reader)
+		if err != nil {
+			return err
+		}
+
+		mtx.RLock()
+		saved, ok := keysMap[key]
+		mtx.RUnlock()
+
+		var message string
+		if !ok {
+			message = "$" + strconv.Itoa(len(key)) + "\r\n" + key + "\r\n"
+			conn.Write([]byte(message))
+		} else {
+			message = "$" + strconv.Itoa(len(saved)) + "\r\n" + saved + "\r\n"
+
+		}
+
 		conn.Write([]byte(message))
 	default:
 		conn.Write([]byte("unknown command"))
